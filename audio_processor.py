@@ -5,6 +5,9 @@ CHUNK = 1024
 FORMAT = pyaudio.paFloat32
 RATE = 44100
 
+# Global variable for gain control
+gain = 1.0
+
 def list_devices():
     p = pyaudio.PyAudio()
     info = p.get_host_api_info_by_index(0)
@@ -19,16 +22,20 @@ def list_devices():
     p.terminate()
 
 def audio_callback(in_data, frame_count, time_info, status):
-    # Convert input data to numpy array
+    global gain
     audio_data = np.frombuffer(in_data, dtype=np.float32)
     
-    # For now, we're just passing the input directly to the output
-    # Later, we'll add processing here
-    output_data = audio_data.tobytes()
+    # Apply gain
+    processed_data = audio_data * gain
     
+    # Clip the signal to prevent distortion
+    processed_data = np.clip(processed_data, -1.0, 1.0)
+    
+    output_data = processed_data.tobytes()
     return (output_data, pyaudio.paContinue)
 
 def main():
+    global gain
     list_devices()
     
     input_device = int(input("Enter input device index: "))
@@ -55,12 +62,26 @@ def main():
                     frames_per_buffer=CHUNK,
                     stream_callback=audio_callback)
 
-    print(f"Audio processor is running with {channels} channel(s). Press Ctrl+C to stop.")
+    print(f"Audio processor is running with {channels} channel(s).")
+    print("Use the following commands:")
+    print("  'g <value>' to set gain (e.g., 'g 1.5' for 150% volume)")
+    print("  'q' to quit")
     
     try:
         stream.start_stream()
         while stream.is_active():
-            pass
+            command = input("Enter command: ").strip().lower()
+            if command.startswith('g '):
+                try:
+                    new_gain = float(command[2:])
+                    gain = new_gain
+                    print(f"Gain set to {gain}")
+                except ValueError:
+                    print("Invalid gain value. Please enter a number.")
+            elif command == 'q':
+                break
+            else:
+                print("Unknown command")
     except KeyboardInterrupt:
         print("Stopping audio processor...")
     finally:
